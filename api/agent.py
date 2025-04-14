@@ -447,13 +447,71 @@ class AgentExecuter:
             """,
             
         )
+
+        def calculate_client_rental(
+            unit_cost_asset: float,
+            number_of_assets: int,
+            leasing_rate: float,
+            tenor_months: int,
+            residual_value_rate: float,
+            arrears_advance: int = 0  # 0 for arrears, 1 for advance
+        ) -> float:
+            """
+            Calculates the client rental amount using the PMT formula for normal amortization.
         
+            Args:
+                unit_cost_asset (float): The unit cost of the asset (VAT inclusive).
+                number_of_assets (int): The number of assets.
+                leasing_rate (float): The annual leasing rate (as a decimal, e.g., 0.10 for 10%).
+                tenor_months (int): The tenor of the lease in months.
+                residual_value_rate (float): The residual value rate (as a decimal, e.g., 0.15 for 15%).
+                arrears_advance (int): 0 for payments at the end of the period (arrears),
+                                       1 for payments at the beginning of the period (advance).
+                                       Defaults to 0 (arrears).
+        
+            Returns:
+                float: The calculated client rental amount.
+            """
+            total_cost_vat_inclusive = unit_cost_asset * number_of_assets
+            total_cost_less_vat = total_cost_vat_inclusive / 1.16  # Assuming a fixed VAT rate of 16%
+        
+            present_value = total_cost_less_vat
+            future_value = -(residual_value_rate * total_cost_vat_inclusive)
+            rate_per_period = leasing_rate / 12
+            number_of_periods = tenor_months
+        
+            rental_payment = -npf.pmt(rate_per_period, number_of_periods, present_value, future_value, when=('begin' if arrears_advance == 1 else 'end'))
+            return rental_payment
+        
+        
+        
+        calculate_client_rental_tool = FunctionTool.from_defaults(
+            name="calculate_lease_rental",
+            fn=calculate_client_rental,
+            description="""
+            Calculates the client's lease rental amount using the PMT formula with normal amortization.
+            Requires the unit cost of the asset (VAT inclusive), number of assets, annual leasing rate,
+            tenor in months, residual value rate, and payment timing (0 for arrears, 1 for advance).
+            The expected parameters are as follows;
+        
+                "unit_cost_asset": "The unit cost of the asset, including VAT (float).",
+                "number_of_assets": "The number of assets being leased (integer).",
+                "leasing_rate": "The annual leasing rate as a decimal (e.g., 0.10 for 10%) (float).",
+                "tenor_months": "The lease tenor in months (integer).",
+                "residual_value_rate": "The residual value rate as a decimal (e.g., 0.15 for 15%) (float).",
+                "arrears_advance": "Indicates when payments are due: 0 for arrears (end of period), 1 for advance (beginning of period). Defaults to 0 (integer).",
+        
+            """
+        )
+                
 
 
         llm = Settings.llm
 
+        llm = Settings.llm  # Make sure Settings.llm is correctly initialized
+
         agent_worker = FunctionCallingAgentWorker.from_tools(
-            tools=[vector_query_tool, wikipedia_tool, verify_leasepac_rentals_tool],
+            tools=[vector_query_tool, wikipedia_tool, verify_leasepac_rentals_tool, calculate_client_rental_tool],
             llm=llm,
             system_prompt = """
         You are a highly specialized AI assistant designed to answer user queries related to fintech and lease rentals. You have access to three primary tools:
@@ -462,17 +520,21 @@ class AgentExecuter:
         
         2.  'wikipedia_search': This tool should be used for retrieving **general knowledge and information** from Wikipedia. Utilize it when the user's query seems to require broader context, definitions, or information that is likely not contained within the internal company documents or is not specifically about lease rentals.
         
-        3.  'verify_leasepac_rentals': This tool is specifically designed to **verify lease rental calculations**, particularly for use with LeasePac. Use this tool when the user's query involves checking or understanding the components of a lease rental calculation.
+        3.  'verify_leasepac_rentals': This tool is specifically designed to **verify lease rental calculations**, particularly for use with LeasePac. Use this tool when the user's query involves checking or understanding the components of a lease rental calculation based on a detailed set of input parameters.
+        
+        4.  'calculate_lease_rental': This tool is designed to **calculate the client's lease rental amount** using a specific financial formula (PMT with normal amortization). Use this tool when the user asks to calculate a lease rental and provides the necessary parameters: unit cost of the asset (VAT inclusive), number of assets, annual leasing rate, tenor in months, residual value rate, and whether payments are in arrears (0) or advance (1).
         
         When a user asks a question, follow this process:
         
-        1.  **First, consider if the question is likely to be about verifying a lease rental calculation within LeasePac.** If it explicitly mentions checking rentals, LeasePac, or asks for a breakdown of rental components, **always consider using the 'verify_leasepac_rentals' tool.** You might need to ask clarifying questions to get the necessary parameters.
+        1.  **First, consider if the question is a direct request to calculate a lease rental and if the user has provided the necessary parameters** (unit cost, number of assets, leasing rate, tenor, residual rate, arrears/advance). If so, **use the 'calculate_lease_rental' tool.**
         
-        2.  **If the question is about the company's specific fintech products, features, requirements, or technical details, use the 'document_retrieval' tool first.**
+        2.  **If the question is about verifying an existing lease rental calculation, especially within LeasePac, and you have a detailed set of parameters, consider using the 'verify_leasepac_rentals' tool.**
         
-        3.  **If neither 'verify_leasepac_rentals' nor 'document_retrieval' provides relevant information, OR if the question seems to be about general fintech concepts, industry definitions, or broader background information not related to lease rentals, then use the 'wikipedia_search' tool.**
+        3.  **If the question is about the company's specific fintech products, features, requirements, or technical details, use the 'document_retrieval' tool first.**
         
-        4.  If none of the tools provide relevant information to answer the user's query, respond with the following user-friendly message: "I could not find the answer to your question in the available resources."
+        4.  **If neither 'calculate_lease_rental', 'verify_leasepac_rentals', nor 'document_retrieval' provides relevant information, OR if the question seems to be about general fintech concepts, industry definitions, or broader background information not related to specific calculations, then use the 'wikipedia_search' tool.**
+        
+        5.  If none of the tools provide relevant information to answer the user's query, respond with the following user-friendly message: "I could not find the answer to your question in the available resources."
         
         Focus on providing accurate and concise answers based solely on the data retrieved by the tools. Clearly indicate which tool you used to obtain the information in your response if necessary for clarity.
         """,
