@@ -44,7 +44,66 @@ import os
 SETUP PINECONE
 """
 
+from llama_index.core.tools import FunctionTool, ToolMetadata
+import math
+from typing import Optional, List, Dict
 
+class RentalHelper:
+    """
+    A class that encapsulates rental calculation logic, mirroring the VB.NET RentalHelper.
+    """
+    def __init__(self):
+        self.CostNoVAT = 0.0
+        self.CostWithVAT = 0.0
+        self.VATRate = 0.0
+        self.IntRate = 0.0
+        self.RVRate = 0.0
+        self.InsuranceRate = 0.0
+        self.Tenure = 0
+        self.TenureType = 1  # Assuming 1 for months, can be adjusted based on ddlTenureType values
+        self.PaymentsPerYear = 12 # Default to monthly payments
+        self.ArrearsAdvance = "Arrears" # Default value
+        self.term = 0.0
+        self.resdValue = 0.0
+        self.bankIntRate = 0.0
+        self.periodInYears = 0.0
+        self.rvInvestment = 0.0
+        self.bankCostWithVAT = 0.0
+        self.bankCostNoVAT = 0.0
+
+    def GetBankRentalAmount(self):
+        """
+        Calculates the bank rental amount using the PMT formula.
+        """
+        if self.bankIntRate == 0 or self.term == 0:
+            return 0.0
+
+        pv = -self.bankCostWithVAT  # Present value (negative as it's an outflow)
+        r = self.bankIntRate / self.PaymentsPerYear # Rate per period
+        nper = self.term * self.PaymentsPerYear # Total number of periods
+
+        if r == 0:
+            return pv / nper
+
+        pmt = (r * pv) / (1 - math.pow(1 + r, -nper))
+        return pmt
+
+    def GetRentalAmount(self):
+        """
+        Calculates the rental amount using the PMT formula (similar to bank rental but with potentially different interest rate).
+        """
+        if self.IntRate == 0 or self.term == 0:
+            return 0.0
+
+        pv = -self.CostWithVAT  # Present value
+        r = self.IntRate / self.PaymentsPerYear # Rate per period
+        nper = self.term * self.PaymentsPerYear # Total number of periods
+
+        if r == 0:
+            return pv / nper
+
+        pmt = (r * pv) / (1 - math.pow(1 + r, -nper))
+        return pmt
 
 
 
@@ -185,34 +244,241 @@ class AgentExecuter:
         )
 
 
+        def verify_rentals(
+            item_count: Optional[int] = None,
+            principal: Optional[float] = None,
+            capital: Optional[float] = None,
+            vat_rate: Optional[float] = None,
+            bank_margin_rate: Optional[float] = None,
+            residual_value_rate: Optional[float] = None,
+            insurance_rate: Optional[float] = None,
+            tenure: Optional[int] = None,
+            tenure_type: Optional[str] = None, # e.g., "Months", "Years"
+            payment_frequency: Optional[str] = None, # e.g., "Monthly", "Quarterly", "Yearly"
+            due_factor: Optional[str] = None, # "Arrears" or "Advance"
+            interest_computation_method: Optional[str] = None, # e.g., "Simple", "Compound", "6" for step
+            bank_residual_value: Optional[float] = None,
+            bank_interest_rate: Optional[float] = None,
+            bank_period_in_years: Optional[float] = None,
+            maintenance_rental: Optional[float] = None,
+            charges_armotization: Optional[float] = None,
+            rental_vat_rate_setup: Optional[float] = None
+        ) -> Dict:
+            """
+            Verifies lease rental calculations, specifically designed for use
+            when calculating lease rentals within LeasePac.
+        
+            Args:
+                item_count (int, optional): The quantity of items being leased.
+                principal (float, optional): The principal amount (without VAT).
+                capital (float, optional): The total capital amount (with VAT).
+                vat_rate (float, optional): The VAT rate (in percentage).
+                bank_margin_rate (float, optional): The bank margin rate (in percentage).
+                residual_value_rate (float, optional): The residual value rate (in percentage).
+                insurance_rate (float, optional): The insurance rate (in percentage).
+                tenure (int, optional): The number of repayment periods.
+                tenure_type (str, optional): The type of tenure ('Months' or 'Years').
+                payment_frequency (str, optional): The payment frequency ('Monthly', 'Quarterly', or 'Yearly').
+                due_factor (str, optional): Indicates if payments are due in 'Arrears' or 'Advance'.
+                interest_computation_method (str, optional): The interest computation method (e.g., 'Simple', 'Compound', '6').
+                bank_residual_value (float, optional): The bank's residual value.
+                bank_interest_rate (float, optional): The bank's interest rate (in percentage).
+                bank_period_in_years (float, optional): The bank's period in years.
+                maintenance_rental (float, optional): The monthly maintenance rental cost.
+                charges_armotization (float, optional): The total charges for amortization.
+                rental_vat_rate_setup (float, optional): The VAT rate for the rental calculation (in percentage).
+        
+            Returns:
+                Dict: A dictionary containing the computed rental values, or a message
+                      indicating missing parameters.
+            """
+            if any(arg is None for arg in [item_count, principal, capital, vat_rate,
+                                           bank_margin_rate, residual_value_rate,
+                                           insurance_rate, tenure, tenure_type,
+                                           payment_frequency, due_factor,
+                                           interest_computation_method,
+                                           bank_residual_value, bank_interest_rate,
+                                           bank_period_in_years, maintenance_rental,
+                                           charges_armotization, rental_vat_rate_setup]):
+                return {
+                    "error": "Missing parameters. Please provide the following:",
+                    "parameters_needed": [
+                        "item_count (integer)",
+                        "principal (float)",
+                        "capital (float)",
+                        "vat_rate (float)",
+                        "bank_margin_rate (float)",
+                        "residual_value_rate (float)",
+                        "insurance_rate (float)",
+                        "tenure (integer)",
+                        "tenure_type (string: 'Months' or 'Years')",
+                        "payment_frequency (string: 'Monthly', 'Quarterly', or 'Yearly')",
+                        "due_factor (string: 'Arrears' or 'Advance')",
+                        "interest_computation_method (string: e.g., 'Simple', 'Compound', '6')",
+                        "bank_residual_value (float)",
+                        "bank_interest_rate (float)",
+                        "bank_period_in_years (float)",
+                        "maintenance_rental (float)",
+                        "charges_armotization (float)",
+                        "rental_vat_rate_setup (float)"
+                    ]
+                }
+        
+            quantity = item_count
+            vat_setup = rental_vat_rate_setup / 100.0
+        
+            rt = RentalHelper()
+            rt.CostNoVAT = principal * quantity
+            rt.CostWithVAT = capital * quantity
+            rt.VATRate = vat_rate / 100.0
+            rt.IntRate = bank_margin_rate / 100.0
+            rt.RVRate = residual_value_rate / 100.0
+            rt.InsuranceRate = insurance_rate / 100.0
+            rt.Tenure = tenure
+        
+            if tenure_type.lower() == "years":
+                rt.TenureType = 12
+            elif tenure_type.lower() == "months":
+                rt.TenureType = 1
+            else:
+                raise ValueError(f"Invalid tenure type: {tenure_type}")
+        
+            if payment_frequency.lower() == "monthly":
+                rt.PaymentsPerYear = 12
+                month_period = 1
+            elif payment_frequency.lower() == "quarterly":
+                rt.PaymentsPerYear = 4
+                month_period = 3
+            elif payment_frequency.lower() == "yearly":
+                rt.PaymentsPerYear = 1
+                month_period = 12
+            else:
+                raise ValueError(f"Invalid payment frequency: {payment_frequency}")
+        
+            rt.ArrearsAdvance = due_factor
+        
+            if interest_computation_method == "6":
+                rt.term = tenure # Assuming for step, tenure directly represents the number of periods
+            else:
+                rt.term = (rt.Tenure * rt.TenureType) / month_period
+        
+            # Bank Details
+            rt.resdValue = bank_residual_value
+            rt.bankIntRate = bank_interest_rate / 100.0
+            rt.periodInYears = bank_period_in_years
+        
+            rt.rvInvestment = rt.resdValue / (math.pow((1 + rt.bankIntRate), rt.periodInYears)) if rt.bankIntRate != 0 else rt.resdValue
+            rt.bankCostWithVAT = (rt.CostWithVAT) - rt.rvInvestment
+            rt.bankCostNoVAT = rt.bankCostWithVAT / (1 + rt.VATRate) if (1 + rt.VATRate) != 0 else rt.bankCostWithVAT
+            bank_rental = rt.GetBankRentalAmount()
+        
+            rental = rt.GetRentalAmount()
+            rental_monthly = rental / month_period
+            insurance = rt.CostWithVAT * rt.InsuranceRate
+            insurance_monthly = insurance / 12
+            insurance_total = insurance_monthly * month_period
+        
+            charges_total = charges_armotization + (maintenance_rental * quantity)
+            monthly_cost = rental_monthly + charges_total + insurance_monthly
+            wet_lease_rental = monthly_cost * month_period
+            wet_lease_rental_vat = wet_lease_rental * ((100 + rental_vat_rate_setup) / 100)
+            monthly_cost_vat = monthly_cost * ((100 + rental_vat_rate_setup) / 100)
+            effective_vat_rate = vat_rate / 100.0
+        
+            if interest_computation_method == "6":
+                rental_margin = monthly_cost - bank_rental
+            else:
+                rental_margin = wet_lease_rental - bank_rental
+        
+            all_costs = rt.CostNoVAT
+            all_costs_vat = all_costs * (1 + effective_vat_rate) if effective_vat_rate != 0 else all_costs
+            service_fees = (maintenance_rental * month_period) * quantity
+        
+            return {
+                "bank_rental": bank_rental,
+                "rv_investment": rt.rvInvestment,
+                "bank_cost_vat": rt.bankCostWithVAT,
+                "bank_cost_less_vat": rt.bankCostNoVAT,
+                "rental_amount": rental,
+                "rental_per_month": rental_monthly,
+                "insurance_amount": insurance_total,
+                "insurance_per_month": insurance_monthly,
+                "monthly_cost": monthly_cost,
+                "monthly_cost_vat": monthly_cost_vat,
+                "wet_lease_rental_cost": wet_lease_rental,
+                "wet_lease_rental_cost_vat": wet_lease_rental_vat,
+                "all_costs": all_costs,
+                "all_costs_vat": all_costs_vat,
+                "rental_margin": rental_margin,
+                "service_fees": service_fees,
+                "term": rt.term
+            }
+        
+        verify_leasepac_rentals_tool = FunctionTool.from_defaults(
+            name="verify_leasepac_rentals",
+            fn=verify_rentals,
+            description="""
+            Use this tool to verify lease rental calculations, specifically when working
+            with LeasePac. This tool requires various financial inputs such as item count,
+            principal, interest rates, tenure, and other charges to compute and return
+            key rental figures for verification against LeasePac outputs. If no parameters
+            are provided, the tool will indicate the necessary parameters.
+            The parameters are as follows;
+            param_descriptions={
+                "item_count": "The quantity of items being leased (integer).",
+                "principal": "The principal amount (without VAT) as a float.",
+                "capital": "The total capital amount (with VAT) as a float.",
+                "vat_rate": "The VAT rate as a percentage (float).",
+                "bank_margin_rate": "The bank margin rate as a percentage (float).",
+                "residual_value_rate": "The residual value rate as a percentage (float).",
+                "insurance_rate": "The insurance rate as a percentage (float).",
+                "tenure": "The number of repayment periods (integer).",
+                "tenure_type": "The type of tenure ('Months' or 'Years' as a string).",
+                "payment_frequency": "The payment frequency ('Monthly', 'Quarterly', or 'Yearly' as a string).",
+                "due_factor": "Indicates if payments are due in 'Arrears' or 'Advance' (string).",
+                "interest_computation_method": "The interest computation method (e.g., 'Simple', 'Compound', '6' as a string).",
+                "bank_residual_value": "The bank's residual value as a float.",
+                "bank_interest_rate": "The bank's interest rate as a percentage (float).",
+                "bank_period_in_years": "The bank's period in years as a float.",
+                "maintenance_rental": "The monthly maintenance rental cost as a float.",
+                "charges_armotization": "The total charges for amortization as a float.",
+                "rental_vat_rate_setup": "The VAT rate for the rental calculation as a percentage (float)."
+            }
+            """,
+            
+        )
+        
+
 
         llm = Settings.llm
 
         agent_worker = FunctionCallingAgentWorker.from_tools(
-            tools=[vector_query_tool, wikipedia_tool],
+            tools=[vector_query_tool, wikipedia_tool, verify_leasepac_rentals_tool],
             llm=llm,
-            system_prompt="""
-        You are a highly specialized AI assistant designed to answer user queries related to fintech. You have access to two primary tools:
-
+            system_prompt = """
+        You are a highly specialized AI assistant designed to answer user queries related to fintech and lease rentals. You have access to three primary tools:
+        
         1.  'document_retrieval': This tool should be your **first point of contact** for questions about the company's specific fintech Business Requirement Documents (BRDs), user manuals, and technical manuals. Use it to find details about product features, requirements, and internal technical information.
-
-        2.  'wikipedia_search': This tool should be used for retrieving **general knowledge and information** from Wikipedia. Utilize it when the user's query seems to require broader context, definitions, or information that is likely not contained within the internal company documents.
-
-        **Crucially, you MUST always use the available tools to find relevant information.** Do not attempt to answer questions based on prior knowledge or make any assumptions.
-
+        
+        2.  'wikipedia_search': This tool should be used for retrieving **general knowledge and information** from Wikipedia. Utilize it when the user's query seems to require broader context, definitions, or information that is likely not contained within the internal company documents or is not specifically about lease rentals.
+        
+        3.  'verify_leasepac_rentals': This tool is specifically designed to **verify lease rental calculations**, particularly for use with LeasePac. Use this tool when the user's query involves checking or understanding the components of a lease rental calculation.
+        
         When a user asks a question, follow this process:
-
-        1.  **First, consider if the question is likely to be answered by the company's internal fintech documents.** If it is about specific product features, requirements, or technical details of company products, **always use the 'document_retrieval' tool first.**
-
-        2.  **If the 'document_retrieval' tool does not return relevant information, OR if the question seems to be about general fintech concepts, industry definitions, or broader background information, then use the 'wikipedia_search' tool.**
-
-        3.  If neither tool provides relevant information to answer the user's query, respond with the following user-friendly message: "I could not find the answer to your question in the available resources."
-
+        
+        1.  **First, consider if the question is likely to be about verifying a lease rental calculation within LeasePac.** If it explicitly mentions checking rentals, LeasePac, or asks for a breakdown of rental components, **always consider using the 'verify_leasepac_rentals' tool.** You might need to ask clarifying questions to get the necessary parameters.
+        
+        2.  **If the question is about the company's specific fintech products, features, requirements, or technical details, use the 'document_retrieval' tool first.**
+        
+        3.  **If neither 'verify_leasepac_rentals' nor 'document_retrieval' provides relevant information, OR if the question seems to be about general fintech concepts, industry definitions, or broader background information not related to lease rentals, then use the 'wikipedia_search' tool.**
+        
+        4.  If none of the tools provide relevant information to answer the user's query, respond with the following user-friendly message: "I could not find the answer to your question in the available resources."
+        
         Focus on providing accurate and concise answers based solely on the data retrieved by the tools. Clearly indicate which tool you used to obtain the information in your response if necessary for clarity.
         """,
             verbose=True
         )
-
+        
         agent = AgentRunner(agent_worker)
 
         try:
