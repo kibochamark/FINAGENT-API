@@ -589,7 +589,7 @@ class AgentExecuter:
                 
                 3.  'verify_leasepac_rentals': This tool is specifically designed to **verify lease rental calculations**, particularly for use with LeasePac. Use this tool when the user's query involves checking or understanding the components of a lease rental calculation based on a detailed set of input parameters.
                 
-                4.  'calculate_lease_rental': This tool is designed to **calculate the client's lease rental amount** using a specific financial formula (PMT with normal amortization). Use this tool when the user asks to calculate a lease rental and provides the necessary parameters: unit cost of the asset (VAT inclusive), number of assets, annual leasing rate, tenor in months, residual value rate, and whether payments are in arrears (0) or advance (1).
+                4.  'calculate_client_and_bank_rentals': This tool is designed to **calculate the client's  and banks lease rental amount** using a specific financial formula (PMT with normal amortization). Use this tool when the user asks to calculate a lease rental and provides the necessary parameters: unit cost of the asset (VAT inclusive), number of assets, annual leasing rate, tenor in months, residual value rate, and whether payments are in arrears (0) or advance (1).
                 
                 When a user asks a question, follow this process:
                 
