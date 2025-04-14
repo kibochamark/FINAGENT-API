@@ -449,69 +449,134 @@ class AgentExecuter:
             
         )
 
-        def calculate_client_rental(
+        def calculate_lease_rentals(
             unit_cost_asset: float,
             number_of_assets: int,
             leasing_rate: float,
             tenor_months: int,
             residual_value_rate: float,
+            leasing_margin: float,
             arrears_advance: int = 0  # 0 for arrears, 1 for advance
-        ) -> float:
+        ) -> Dict:
             """
-            Calculates the client rental amount using the PMT formula for normal amortization.
+            Calculates both the client and bank lease rentals and returns a summary
+            including the inputs for both calculations.
         
             Args:
                 unit_cost_asset (float): The unit cost of the asset (VAT inclusive).
                 number_of_assets (int): The number of assets.
-                leasing_rate (float): The annual leasing rate (as a decimal, e.g., 0.10 for 10%).
+                leasing_rate (float): The annual leasing rate (as a decimal).
                 tenor_months (int): The tenor of the lease in months.
-                residual_value_rate (float): The residual value rate (as a decimal, e.g., 0.15 for 15%).
-                arrears_advance (int): 0 for payments at the end of the period (arrears),
-                                       1 for payments at the beginning of the period (advance).
-                                       Defaults to 0 (arrears).
+                residual_value_rate (float): The residual value rate (as a decimal).
+                leasing_margin (float): The annual leasing margin (as a decimal).
+                arrears_advance (int): 0 for arrears, 1 for advance. Defaults to 0.
         
             Returns:
-                float: The calculated client rental amount.
+                Dict: A dictionary containing the client rental summary and the bank rental summary,
+                      each including their respective inputs and calculated rental.
             """
-            total_cost_vat_inclusive = unit_cost_asset * number_of_assets
-            total_cost_less_vat = total_cost_vat_inclusive / 1.16  # Assuming a fixed VAT rate of 16%
+            total_cost_vat_inclusive_client = round(unit_cost_asset * number_of_assets, 2)
+            total_cost_less_vat_client = round(total_cost_vat_inclusive_client / 1.16, 2)
         
-            present_value = total_cost_less_vat
-            future_value = -(residual_value_rate * total_cost_vat_inclusive)
-            rate_per_period = leasing_rate / 12
-            number_of_periods = tenor_months
+            client_rate_per_period = (leasing_rate/100) / 12
+            client_number_of_periods = tenor_months
+            client_present_value = total_cost_less_vat_client
+            client_future_value = -(round(residual_value_rate/100, 2) * total_cost_vat_inclusive_client)
         
-            rental_payment = -npf.pmt(rate_per_period, number_of_periods, present_value, future_value, when=('begin' if arrears_advance == 1 else 'end'))
-            return rental_payment
+            # print(f"client_rate_per_period: {client_rate_per_period}")
+            # print(total_cost_less_vat_client)
+            # print(f"client_number_of_periods: {client_number_of_periods}")
+            # print(f"client_present_value: {client_present_value}")
+            # print(f"client_future_value: {client_future_value}")
+            # print(f"arrears_advance: {arrears_advance}")
+            # print(f"leasing_margin: {leasing_margin}")
+            # print(f"total_cost_vat_inclusive_client: {total_cost_vat_inclusive_client}")
+        
+            client_rental = -npf.pmt(client_rate_per_period, client_number_of_periods, client_present_value, client_future_value, when=('begin' if arrears_advance == 1 else 'end'))
+            client_rental_rounded = round(client_rental, 2)
+        
+            client_rental_summary = {
+                "inputs": {
+                    "unit_cost_asset": unit_cost_asset,
+                    "number_of_assets": number_of_assets,
+                    "leasing_rate": leasing_rate,
+                    "tenor_months": tenor_months,
+                    "residual_value_rate": residual_value_rate,
+                    "arrears_advance": arrears_advance,
+                },
+                "calculated_rental": client_rental_rounded,
+            }
+        
+            effective_bank_rate = leasing_rate - leasing_margin
+            bank_periods_in_year = 12
+            discount_factor_bank = pow((1 + effective_bank_rate/100),(tenor_months / bank_periods_in_year))
+            npv_bank = ((residual_value_rate/100) * total_cost_vat_inclusive_client) / discount_factor_bank
+            bank_cost_with_vat = round(total_cost_vat_inclusive_client - npv_bank, 2)
+            bank_cost_less_vat = round(bank_cost_with_vat / 1.16, 2)
         
         
+            # print(effective_bank_rate)
+            # print(bank_periods_in_year)
+            # print(discount_factor_bank)
+            # print((residual_value_rate/100) * total_cost_vat_inclusive_client)
+            # print(pow((1 + effective_bank_rate/100),(tenor_months / bank_periods_in_year)))
+            # print(npv_bank)
+            # print(bank_cost_with_vat)
+            # print(bank_cost_less_vat)
         
-        calculate_client_rental_tool = FunctionTool.from_defaults(
-            name="calculate_lease_rental",
-            fn=calculate_client_rental,
+            bank_rental = -npf.pmt((effective_bank_rate/100) / bank_periods_in_year, tenor_months, bank_cost_less_vat, 0, when=('begin' if arrears_advance == 1 else 'end'))
+            bank_rental_rounded = round(bank_rental, 2)
+        
+            bank_rental_summary = {
+                "inputs": {
+                    "bank_rate": effective_bank_rate,
+                    "leasing_margin": leasing_margin,
+                    "total_cost_asset_vat": total_cost_vat_inclusive_client,
+                    "tenor_months": tenor_months,
+                    "residual_value": round(residual_value_rate * total_cost_vat_inclusive_client, 2),
+                    "arrears_advance": arrears_advance,
+                    "npv_bank": npv_bank,
+                    "bank_cost_with_vat": bank_cost_with_vat,
+                    "bank_cost_less_vat": bank_cost_less_vat,
+                },
+                "calculated_rental": bank_rental_rounded,
+            }
+        
+            return {
+                "client_rental_summary": client_rental_summary,
+                "bank_rental_summary": bank_rental_summary,
+            }
+        
+        calculate_lease_rentals_tool = FunctionTool.from_defaults(
+            name="calculate_client_and_bank_rentals",
+            fn=calculate_lease_rentals,
             description="""
-            Calculates the client's lease rental amount using the PMT formula with normal amortization.
-            Requires the unit cost of the asset (VAT inclusive), number of assets, annual leasing rate,
-            tenor in months, residual value rate, and payment timing (0 for arrears, 1 for advance).
-            The expected parameters are as follows;
-        
-                "unit_cost_asset": "The unit cost of the asset, including VAT (float).",
+            Calculates both the client's and the bank's lease rental amounts and returns
+            a summary including the inputs used for each calculation.
+            Requires the unit cost of the asset (VAT inclusive), number of assets,
+            annual leasing rate, tenor in months, residual value rate, bank base rate,
+            leasing margin, and payment timing (0 for arrears, 1 for advance).
+            The parameters should be as follows;
+             "unit_cost_asset": "The unit cost of the asset, including VAT (float).",
                 "number_of_assets": "The number of assets being leased (integer).",
                 "leasing_rate": "The annual leasing rate as a decimal (e.g., 0.10 for 10%) (float).",
                 "tenor_months": "The lease tenor in months (integer).",
                 "residual_value_rate": "The residual value rate as a decimal (e.g., 0.15 for 15%) (float).",
-                "arrears_advance": "Indicates when payments are due: 0 for arrears (end of period), 1 for advance (beginning of period). Defaults to 0 (integer).",
-        
-            """
+                "leasing_margin": "The annual leasing margin as a decimal (float).",
+                "arrears_advance": "Indicates when payments are due: 0 for arrears (end of period), 1 for advance (beginning of period). Defaults to 0 (integer)."
+            """,
+           
         )
+
+
                 
 
 
-        llm = Settings.llm
+        
 
         llm = Settings.llm  # Make sure Settings.llm is correctly initialized
 
-        agent_worker = FunctionCallingAgentWorker.from_tools(
+       agent_worker = FunctionCallingAgentWorker.from_tools(
             tools=[vector_query_tool, wikipedia_tool, verify_leasepac_rentals_tool, calculate_client_rental_tool],
             llm=llm,
             system_prompt = """
@@ -541,7 +606,7 @@ class AgentExecuter:
         """,
             verbose=True
         )
-        
+
         agent = AgentRunner(agent_worker)
 
         try:
