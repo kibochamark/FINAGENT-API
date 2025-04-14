@@ -576,7 +576,7 @@ class AgentExecuter:
 
         llm = Settings.llm  # Make sure Settings.llm is correctly initialized
         agent_worker = FunctionCallingAgentWorker.from_tools(
-                tools=[vector_query_tool, wikipedia_tool, verify_leasepac_rentals_tool, calculate_client_rental_tool],
+                tools=[vector_query_tool, wikipedia_tool, verify_leasepac_rentals_tool, calculate_lease_rentals_tool],
                 llm=llm,
                 system_prompt = """
             You are a highly specialized AI assistant designed to answer user queries related to fintech and lease rentals. You have access to three primary tools:
