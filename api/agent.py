@@ -47,6 +47,7 @@ SETUP PINECONE
 from llama_index.core.tools import FunctionTool, ToolMetadata
 import math
 from typing import Optional, List, Dict
+import numpy_financial as npf
 
 class RentalHelper:
     """
