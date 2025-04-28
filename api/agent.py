@@ -191,10 +191,10 @@ class AgentExecuter:
         # Get the search wikipedia tool (assuming it's the second one, verify this)
         wikipedia_tool = wiki_spec.to_tool_list()[1]
         wikipedia_tool.description = (
-            "Use this tool to search Wikipedia for general knowledge and information "
-            "that might be relevant to the user's fintech-related query but is not found "
-            "in the internal company documents. Use it for definitions, background information, "
-            "or broader industry context."
+        "Use this tool to search Wikipedia for general knowledge and information "
+        "that might be relevant to the user's fintech-related query but is not found "
+        "in the internal company documents. Use it for definitions, background information, "
+        "or broader industry context."
         )
 
 #         second tool
@@ -241,7 +241,7 @@ class AgentExecuter:
         vector_query_tool = FunctionTool.from_defaults(
             name="document_retrieval",
             fn=create_vector_query,
-            description="Use this tool to find specific information within the company's fintech BRDs, user manuals, and technical guides by searching their content based on keywords and concepts. This is the primary tool for answering questions about internal product details.",
+            description="Use this tool to search for information within our company's documents.  You can ask questions about our fintech products, and this tool will look through documents like BRDs, user manuals, release notes, and technical guides to find the answer.  It's great for finding specific details about product features, how to use them, and troubleshooting tips.",
         )
 
 
@@ -415,6 +415,7 @@ class AgentExecuter:
                 "term": rt.term
             }
         
+        
         verify_leasepac_rentals_tool = FunctionTool.from_defaults(
             name="verify_leasepac_rentals",
             fn=verify_rentals,
@@ -446,7 +447,7 @@ class AgentExecuter:
                 "rental_vat_rate_setup": "The VAT rate for the rental calculation as a percentage (float)."
             }
             """,
-            
+        
         )
 
         def calculate_lease_rentals(
@@ -547,25 +548,25 @@ class AgentExecuter:
                 "bank_rental_summary": bank_rental_summary,
             }
         
+        
+
         calculate_lease_rentals_tool = FunctionTool.from_defaults(
             name="calculate_client_and_bank_rentals",
             fn=calculate_lease_rentals,
             description="""
-            Calculates both the client's and the bank's lease rental amounts and returns
-            a summary including the inputs used for each calculation.
-            Requires the unit cost of the asset (VAT inclusive), number of assets,
-            annual leasing rate, tenor in months, residual value rate, bank base rate,
-            leasing margin, and payment timing (0 for arrears, 1 for advance).
-            The parameters should be as follows;
-             "unit_cost_asset": "The unit cost of the asset, including VAT (float).",
-                "number_of_assets": "The number of assets being leased (integer).",
-                "leasing_rate": "The annual leasing rate as a decimal (e.g., 0.10 for 10%) (float).",
-                "tenor_months": "The lease tenor in months (integer).",
-                "residual_value_rate": "The residual value rate as a decimal (e.g., 0.15 for 15%) (float).",
-                "leasing_margin": "The annual leasing margin as a decimal (float).",
-                "arrears_advance": "Indicates when payments are due: 0 for arrears (end of period), 1 for advance (beginning of period). Defaults to 0 (integer)."
-            """,
+            Calculates lease payments for both the customer and the bank.  Tell me about the lease, and I'll work out the monthly payments.
+            You'll need to provide these details:
         
+            - "unit_cost_asset": How much does one item being leased cost? (including VAT)
+            - "number_of_assets": How many items are being leased?
+            - "leasing_rate": What's the yearly interest rate for the lease? (e.g., 0.10 for 10%)
+            - "tenor_months": How many months will the lease last?
+            - "residual_value_rate": What percentage of the item's value will it be worth at the end of the lease? (e.g., 0.15 for 15%)
+            - "leasing_margin": What's the bank's profit margin on the lease?
+            - "arrears_advance": When are payments made?  Use 0 for the end of the month, or 1 for the beginning.
+        
+            I'll calculate the monthly payment for both the customer and the bank.
+            """,
         )
 
 
@@ -580,31 +581,31 @@ class AgentExecuter:
         agent_worker = FunctionCallingAgentWorker.from_tools(
                 tools=[vector_query_tool, wikipedia_tool, verify_leasepac_rentals_tool, calculate_lease_rentals_tool],
                 llm=llm,
-                system_prompt = """
-                You are a highly specialized AI assistant designed to answer user queries related to fintech and lease rentals. You have access to three primary tools:
-                
-                1.  'document_retrieval': This tool should be your **first point of contact** for questions about the company's specific fintech Business Requirement Documents (BRDs), user manuals, and technical manuals. Use it to find details about product features, requirements, and internal technical information.
-                
-                2.  'wikipedia_search': This tool should be used for retrieving **general knowledge and information** from Wikipedia. Utilize it when the user's query seems to require broader context, definitions, or information that is likely not contained within the internal company documents or is not specifically about lease rentals.
-                
-                3.  'verify_leasepac_rentals': This tool is specifically designed to **verify lease rental calculations**, particularly for use with LeasePac. Use this tool when the user's query involves checking or understanding the components of a lease rental calculation based on a detailed set of input parameters.
-                
-                4.  'calculate_client_and_bank_rentals': This tool is designed to **calculate the client's  and banks lease rental amount** using a specific financial formula (PMT with normal amortization). Use this tool when the user asks to calculate a lease rental and provides the necessary parameters: unit cost of the asset (VAT inclusive), number of assets, annual leasing rate, tenor in months, residual value rate, and whether payments are in arrears (0) or advance (1).
-                
-                When a user asks a question, follow this process:
-                
-                1.  **First, consider if the question is a direct request to calculate a lease rental and if the user has provided the necessary parameters** (unit cost, number of assets, leasing rate, tenor, residual rate, arrears/advance). If so, **use the 'calculate_lease_rental' tool.**
-                
-                2.  **If the question is about verifying an existing lease rental calculation, especially within LeasePac, and you have a detailed set of parameters, consider using the 'verify_leasepac_rentals' tool.**
-                
-                3.  **If the question is about the company's specific fintech products, features, requirements, or technical details, use the 'document_retrieval' tool first.**
-                
-                4.  **If neither 'calculate_lease_rental', 'verify_leasepac_rentals', nor 'document_retrieval' provides relevant information, OR if the question seems to be about general fintech concepts, industry definitions, or broader background information not related to specific calculations, then use the 'wikipedia_search' tool.**
-                
-                5.  If none of the tools provide relevant information to answer the user's query, respond with the following user-friendly message: "I could not find the answer to your question in the available resources."
-                
-                Focus on providing accurate and concise answers based solely on the data retrieved by the tools. Clearly indicate which tool you used to obtain the information in your response if necessary for clarity.
-                """,
+                system_prompt="""
+            You are a highly specialized AI assistant designed to answer user queries related to fintech and lease rentals. You have access to the following tools:
+            
+            1.  'document_retrieval':  This is your go-to tool for questions about our company's specific fintech products.  It searches our internal documents like BRDs, user manuals, and tech guides to find details on product features, requirements, and technical information.  Use this first for questions about how our products work.
+            
+            2.  'wikipedia_search':  Use this tool to search Wikipedia for general knowledge.  It's helpful for definitions, background information, and broader industry context on fintech topics when the answer isn't in our company documents.
+            
+            3.  'verify_leasepac_rentals':  This tool checks lease rental calculations, especially for LeasePac.  Use it to confirm the accuracy of a lease payment calculation when you have the specific details used in that calculation.
+            
+            4.  'calculate_client_and_bank_rentals': This tool calculates lease payments for both the customer and the bank, given the lease terms.  Use this when the user wants to know the actual payment amounts, and provides the cost of the asset, number of assets, interest rate, lease length, residual value, bank margin, and payment timing.
+            
+            When a user asks a question, follow this process:
+            
+            1.  If the user asks for a lease payment calculation and provides all the necessary details (asset cost, number of assets, interest rate, lease length, residual value, bank margin, payment timing), use 'calculate_client_and_bank_rentals'.
+            
+            2.  If the user asks to verify a lease calculation, especially for LeasePac, and provides the calculation details, use 'verify_leasepac_rentals'.
+            
+            3.  For questions about our company's fintech products, their features, or how they work, start with 'document_retrieval'.
+            
+            4.  For general fintech information, definitions, or industry context not specific to our company's products, use 'wikipedia_search'.
+            
+            5.  If none of the tools provide relevant information to answer the user's query, respond with: "I could not find the answer to your question in the available resources."
+            
+            Provide accurate and concise answers based on the information from the tools.  Always mention which tool you used.
+            """,
                 verbose=True
             )
 
